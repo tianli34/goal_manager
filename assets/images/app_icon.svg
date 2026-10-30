@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#203D31"/>
+      <stop offset="0.54" stop-color="#315846"/>
+      <stop offset="1" stop-color="#426B54"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="70%" cy="28%" r="68%">
+      <stop offset="0" stop-color="#8FC5A0" stop-opacity="0.23"/>
+      <stop offset="1" stop-color="#8FC5A0" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="route" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#D8EBD9"/>
+      <stop offset="1" stop-color="#F8F5E9"/>
+    </linearGradient>
+    <filter id="softShadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="12" result="blur"/>
+      <feOffset dy="10" result="offset"/>
+      <feColorMatrix in="offset" type="matrix" values="0 0 0 0 0.05  0 0 0 0 0.15  0 0 0 0 0.10  0 0 0 0.28 0" result="shadow"/>
+      <feMerge><feMergeNode in="shadow"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <!-- Full-bleed evergreen field -->
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+  <rect width="1024" height="1024" fill="url(#glow)"/>
+
+  <!-- Quiet orbit: a subtle sense of continuity and long-term progress -->
+  <circle cx="520" cy="520" r="355" fill="none" stroke="#BBDCC2" stroke-width="3" opacity="0.10"/>
+  <path d="M 245 720 A 355 355 0 0 1 777 224" fill="none" stroke="#BBDCC2" stroke-width="7" stroke-linecap="round" opacity="0.10"/>
+
+  <!-- The route climbs through milestones toward a clear destination -->
+  <g filter="url(#softShadow)">
+    <path d="M 224 760
+             C 310 760, 334 690, 392 642
+             C 449 595, 495 604, 548 552
+             C 600 500, 622 465, 686 425
+             C 711 409, 728 394, 744 372"
+          fill="none" stroke="url(#route)" stroke-width="34"
+          stroke-linecap="round" stroke-linejoin="round"/>
+
+    <!-- Milestone one -->
+    <circle cx="392" cy="642" r="32" fill="#315846" stroke="#F4F3E8" stroke-width="13"/>
+    <circle cx="392" cy="642" r="10" fill="#A9D8B4"/>
+
+    <!-- Milestone two -->
+    <circle cx="548" cy="552" r="32" fill="#315846" stroke="#F4F3E8" stroke-width="13"/>
+    <circle cx="548" cy="552" r="10" fill="#A9D8B4"/>
+
+    <!-- Destination marker and flag -->
+    <path d="M 744 372 L 744 235" fill="none" stroke="#F7F4E9" stroke-width="24" stroke-linecap="round"/>
+    <path d="M 750 242 L 856 276 L 750 317 Z" fill="#B8E2C1" stroke="#E7F2E5" stroke-width="7" stroke-linejoin="round"/>
+    <circle cx="744" cy="372" r="22" fill="#F7F4E9"/>
+  </g>
+
+  <!-- Small origin dot anchors the journey -->
+  <circle cx="224" cy="760" r="17" fill="#B8E2C1" stroke="#F7F4E9" stroke-width="8"/>
+
+  <!-- Restrained inner edge for crispness on bright wallpapers -->
+  <rect x="14" y="14" width="996" height="996" rx="72" fill="none" stroke="#DDEDE0" stroke-opacity="0.08" stroke-width="4"/>
+</svg>
