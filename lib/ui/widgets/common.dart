@@ -406,17 +406,61 @@ Future<String?> promptText(
   String confirmLabel = '确定',
   int maxLines = 1,
   bool allowEmpty = false,
-}) async {
-  final controller = TextEditingController(text: initialValue);
-  final result = await showDialog<String>(
+}) {
+  return showDialog<String>(
     context: context,
-    builder: (context) => AlertDialog(
-      title: Text(title),
+    builder: (context) => _PromptTextDialog(
+      title: title,
+      hint: hint,
+      initialValue: initialValue,
+      confirmLabel: confirmLabel,
+      maxLines: maxLines,
+      allowEmpty: allowEmpty,
+    ),
+  );
+}
+
+class _PromptTextDialog extends StatefulWidget {
+  const _PromptTextDialog({
+    required this.title,
+    required this.hint,
+    required this.initialValue,
+    required this.confirmLabel,
+    required this.maxLines,
+    required this.allowEmpty,
+  });
+
+  final String title;
+  final String? hint;
+  final String initialValue;
+  final String confirmLabel;
+  final int maxLines;
+  final bool allowEmpty;
+
+  @override
+  State<_PromptTextDialog> createState() => _PromptTextDialogState();
+}
+
+class _PromptTextDialogState extends State<_PromptTextDialog> {
+  late final TextEditingController _controller = TextEditingController(
+    text: widget.initialValue,
+  );
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(widget.title),
       content: TextField(
-        controller: controller,
+        controller: _controller,
         autofocus: true,
-        maxLines: maxLines,
-        decoration: InputDecoration(hintText: hint),
+        maxLines: widget.maxLines,
+        decoration: InputDecoration(hintText: widget.hint),
       ),
       actions: [
         TextButton(
@@ -425,17 +469,15 @@ Future<String?> promptText(
         ),
         FilledButton(
           onPressed: () {
-            final text = controller.text.trim();
-            if (!allowEmpty && text.isEmpty) return;
+            final text = _controller.text.trim();
+            if (!widget.allowEmpty && text.isEmpty) return;
             Navigator.pop(context, text);
           },
-          child: Text(confirmLabel),
+          child: Text(widget.confirmLabel),
         ),
       ],
-    ),
-  );
-  controller.dispose();
-  return result;
+    );
+  }
 }
 
 String weekdayName(DateTime date) {

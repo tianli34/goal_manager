@@ -4,6 +4,7 @@ import '../../core/date_utils.dart';
 import '../../core/enums.dart';
 import '../../core/ids.dart';
 import '../../models/review.dart';
+import '../home.dart';
 import '../scope.dart';
 
 class ReviewEditorPage extends StatefulWidget {
@@ -46,6 +47,7 @@ class _ReviewEditorPageState extends State<ReviewEditorPage> {
       appBar: AppBar(
         title: const Text('新建复盘'),
         actions: [
+          const HomeButton(),
           TextButton(onPressed: _save, child: const Text('保存')),
           const SizedBox(width: 4),
         ],

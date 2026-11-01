@@ -1,9 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../core/enums.dart';
-import 'goals/goal_editor_page.dart';
 import 'goals/goals_page.dart';
-import 'goals/update_sheet.dart';
 import 'now/now_page.dart';
 import 'review/review_page.dart';
 import 'scope.dart';
@@ -14,33 +11,84 @@ import 'widgets/pickers.dart';
 class AppShell extends StatefulWidget {
   const AppShell({super.key});
 
+  static final GlobalKey<AppShellState> homeKey = GlobalKey<AppShellState>();
+
   @override
-  State<AppShell> createState() => _AppShellState();
+  State<AppShell> createState() => AppShellState();
 }
 
-class _AppShellState extends State<AppShell> {
+class AppShellState extends State<AppShell> with WidgetsBindingObserver {
   static const _titles = ['当下', '目标', '回顾', '设置'];
 
+  final _goalsKey = GlobalKey<GoalsPageState>();
   int _index = 0;
+  bool _promoteScheduled = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && mounted) {
+      RepositoryScope.read(context).activateScheduledGoals();
+    }
+  }
+
+  void selectHomeTab() {
+    if (_index == 0) return;
+    setState(() => _index = 0);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
+    final repo = RepositoryScope.of(context);
+    if (!repo.settings.newGoalInAppBar && repo.topLevelGoalCount > 3) {
+      _schedulePromoteCreateAction();
+    }
     return Scaffold(
-      appBar: AppBar(title: Text(_titles[_index])),
+      appBar: AppBar(
+        title: Text(_titles[_index]),
+        actions: [
+          if (_index == 1 && repo.settings.newGoalInAppBar)
+            Padding(
+              padding: const EdgeInsets.only(right: 12),
+              child: Center(
+                widthFactor: 1,
+                child: FilledButton.icon(
+                  onPressed: _createGoalFromAppBar,
+                  icon: const Icon(Icons.add, size: 18),
+                  label: const Text('新建'),
+                ),
+              ),
+            ),
+        ],
+      ),
       body: IndexedStack(
         index: _index,
         children: [
           NowPage(onOpenGoals: () => setState(() => _index = 1)),
-          const GoalsPage(),
+          GoalsPage(key: _goalsKey),
           const ReviewPage(),
           const SettingsPage(),
         ],
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _openQuickActions,
-        tooltip: '快速记录',
-        child: const Icon(Icons.add),
-      ),
+      floatingActionButton: _index == 0
+          ? FloatingActionButton.extended(
+              onPressed: _captureIdea,
+              tooltip: '捕获',
+              icon: const Icon(Icons.inbox_outlined),
+              label: const Text('捕获'),
+            )
+          : null,
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,
         onDestinationSelected: (value) => setState(() => _index = value),
@@ -70,81 +118,27 @@ class _AppShellState extends State<AppShell> {
     );
   }
 
-  Future<void> _openQuickActions() async {
-    final action = await showModalBottomSheet<String>(
-      context: context,
-      showDragHandle: true,
-      useSafeArea: true,
-      builder: (context) => SafeArea(
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const ListTile(
-                title: Text(
-                  '快速记录',
-                  style: TextStyle(fontWeight: FontWeight.w700),
-                ),
-                subtitle: Text('先记下来，再决定如何处理'),
-              ),
-              ListTile(
-                leading: const Icon(Icons.inbox_outlined),
-                title: const Text('捕获一个想法'),
-                subtitle: const Text('放入收集箱，不要求机制和日期'),
-                onTap: () => Navigator.pop(context, 'inbox'),
-              ),
-              ListTile(
-                leading: const Icon(Icons.add_task),
-                title: const Text('新建目标'),
-                subtitle: const Text('完整定义机制、达成条件与日期'),
-                onTap: () => Navigator.pop(context, 'create'),
-              ),
-              ListTile(
-                leading: const Icon(Icons.edit_note),
-                title: const Text('更新已有目标'),
-                subtitle: const Text('记录增量、读数、自评或一条说明'),
-                onTap: () => Navigator.pop(context, 'update'),
-              ),
-              const SizedBox(height: 8),
-            ],
-          ),
-        ),
-      ),
-    );
-    if (!mounted || action == null) return;
+  void _schedulePromoteCreateAction() {
+    if (_promoteScheduled) return;
+    _promoteScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _promoteScheduled = false;
+      if (!mounted) return;
+      final repo = RepositoryScope.read(context);
+      if (repo.settings.newGoalInAppBar || repo.topLevelGoalCount <= 3) return;
+      repo.updateSettings(repo.settings.copyWith(newGoalInAppBar: true));
+      showAppSnack(context, '「新建」按钮已移到顶部标题栏');
+    });
+  }
 
-    switch (action) {
-      case 'inbox':
-        final text = await captureIdeaDialog(context);
-        if (text == null || text.trim().isEmpty) return;
-        if (!mounted) return;
-        RepositoryScope.read(context).addInbox(text);
-        if (mounted) showAppSnack(context, '已放入收集箱');
-        break;
-      case 'create':
-        await Navigator.push<void>(
-          context,
-          MaterialPageRoute(builder: (_) => const GoalEditorPage()),
-        );
-        break;
-      case 'update':
-        final goals = RepositoryScope.read(context).goals
-            .where(
-              (g) =>
-                  !g.isArchived &&
-                  (g.lifecycle == Lifecycle.active ||
-                      g.lifecycle == Lifecycle.pending ||
-                      g.lifecycle == Lifecycle.paused),
-            )
-            .toList();
-        if (goals.isEmpty) {
-          if (mounted) showAppSnack(context, '还没有可以更新的目标');
-          return;
-        }
-        final goal = await showGoalPicker(context, goals, title: '更新哪个目标？');
-        if (goal == null || !mounted) return;
-        await showUpdateSheet(context, goal.id);
-        break;
-    }
+  void _createGoalFromAppBar() {
+    _goalsKey.currentState?.createGoal();
+  }
+
+  Future<void> _captureIdea() async {
+    final text = await captureIdeaDialog(context);
+    if (text == null || text.trim().isEmpty || !mounted) return;
+    RepositoryScope.read(context).addInbox(text);
+    if (mounted) showAppSnack(context, '已放入收集箱');
   }
 }

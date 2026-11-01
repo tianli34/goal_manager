@@ -9,6 +9,7 @@ import '../../logic/record_format.dart';
 import '../../models/commitment.dart';
 import '../../models/goal.dart';
 import '../../models/update_record.dart';
+import '../home.dart';
 import '../scope.dart';
 import '../theme.dart';
 import '../widgets/commitment_card.dart';
@@ -28,7 +29,7 @@ class GoalDetailPage extends StatelessWidget {
     final goal = repo.goalById(goalId);
     if (goal == null) {
       return Scaffold(
-        appBar: AppBar(),
+        appBar: AppBar(actions: const [HomeButton()]),
         body: const EmptyState(
           icon: Icons.search_off,
           title: '目标不存在',
@@ -56,6 +57,7 @@ class GoalDetailPage extends StatelessWidget {
       appBar: AppBar(
         title: Text(goal.title, maxLines: 1, overflow: TextOverflow.ellipsis),
         actions: [
+          const HomeButton(),
           IconButton(
             tooltip: '编辑',
             icon: const Icon(Icons.edit_outlined),
@@ -71,7 +73,14 @@ class GoalDetailPage extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 0, 16, 36),
         children: [
-          _Header(goal: goal, parent: parent, snapshot: snapshot),
+          _Header(
+            goal: goal,
+            parent: parent,
+            snapshot: snapshot,
+            onOpenParent: parent == null
+                ? null
+                : () => _openGoal(context, parent.id),
+          ),
           if (_notice(goal) != null) ...[
             const SizedBox(height: 10),
             _Notice(
@@ -85,6 +94,7 @@ class GoalDetailPage extends StatelessWidget {
             goal: goal,
             snapshot: snapshot,
             pacing: pacing,
+            onStart: () => _start(context, goal),
             onUpdate: () => showUpdateSheet(context, goal.id),
             onComplete: () => _complete(context, goal),
             onReopen: () => _reopen(context, goal),
@@ -259,6 +269,18 @@ class GoalDetailPage extends StatelessWidget {
     }
   }
 
+  void _start(BuildContext context, Goal goal) {
+    final repo = RepositoryScope.read(context);
+    final error = repo.changeLifecycle(goal.id, Lifecycle.active);
+    if (context.mounted) {
+      if (error != null) {
+        showAppSnack(context, error, error: true);
+      } else {
+        showAppSnack(context, '已启动目标');
+      }
+    }
+  }
+
   void _complete(BuildContext context, Goal goal) {
     if (goal.mechanism == Mechanism.completion) {
       showUpdateSheet(context, goal.id);
@@ -307,7 +329,7 @@ class GoalDetailPage extends StatelessWidget {
   String? _notice(Goal goal) {
     if (goal.isArchived) return '已归档，不参与关注信号和默认列表。';
     return switch (goal.lifecycle) {
-      Lifecycle.pending => '待开始。可以先开始，也可以直接记录。',
+      Lifecycle.pending => '未激活。点击启动后开始推进，也可以直接记录。',
       Lifecycle.paused => '已暂停，不产生任何关注提醒。',
       Lifecycle.completed =>
         '已完成于 ${formatDateTime(goal.completedAt ?? goal.updatedAt)}。后续记录不会自动重新打开。',
@@ -350,11 +372,13 @@ class _Header extends StatelessWidget {
     required this.goal,
     required this.parent,
     required this.snapshot,
+    this.onOpenParent,
   });
 
   final Goal goal;
   final Goal? parent;
   final ProgressSnapshot snapshot;
+  final VoidCallback? onOpenParent;
 
   @override
   Widget build(BuildContext context) {
@@ -392,19 +416,31 @@ class _Header extends StatelessWidget {
         ],
         if (parent != null) ...[
           const SizedBox(height: 8),
-          Row(
-            children: [
-              Icon(
-                Icons.subdirectory_arrow_right,
-                size: 14,
-                color: scheme.primary,
+          InkWell(
+            onTap: onOpenParent,
+            borderRadius: BorderRadius.circular(8),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 2),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.subdirectory_arrow_right,
+                    size: 14,
+                    color: scheme.primary,
+                  ),
+                  const SizedBox(width: 4),
+                  Flexible(
+                    child: Text(
+                      '属于 ${parent!.title}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 12, color: scheme.primary),
+                    ),
+                  ),
+                  Icon(Icons.chevron_right, size: 15, color: scheme.primary),
+                ],
               ),
-              const SizedBox(width: 4),
-              Text(
-                '属于 ${parent!.title}',
-                style: TextStyle(fontSize: 12, color: scheme.primary),
-              ),
-            ],
+            ),
           ),
         ],
         if (goal.dueDate != null) ...[
@@ -466,6 +502,7 @@ class _ProgressCard extends StatelessWidget {
     required this.goal,
     required this.snapshot,
     required this.pacing,
+    required this.onStart,
     required this.onUpdate,
     required this.onComplete,
     required this.onReopen,
@@ -475,6 +512,7 @@ class _ProgressCard extends StatelessWidget {
   final Goal goal;
   final ProgressSnapshot snapshot;
   final PacingInfo pacing;
+  final VoidCallback onStart;
   final VoidCallback onUpdate;
   final VoidCallback onComplete;
   final VoidCallback onReopen;
@@ -614,6 +652,13 @@ class _ProgressCard extends StatelessWidget {
               spacing: 8,
               runSpacing: 8,
               children: [
+                if (goal.lifecycle == Lifecycle.pending ||
+                    goal.lifecycle == Lifecycle.paused)
+                  FilledButton.icon(
+                    onPressed: onStart,
+                    icon: const Icon(Icons.play_arrow_rounded, size: 18),
+                    label: const Text('启动'),
+                  ),
                 if (goal.lifecycle == Lifecycle.completed)
                   OutlinedButton.icon(
                     onPressed: onReopen,

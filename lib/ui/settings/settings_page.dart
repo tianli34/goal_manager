@@ -3,7 +3,6 @@ import 'package:flutter/services.dart';
 
 import '../../core/date_utils.dart';
 import '../../data/storage.dart';
-import '../../models/settings.dart';
 import '../scope.dart';
 import '../widgets/common.dart';
 
@@ -41,8 +40,9 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   void _commitThresholds() {
-    RepositoryScope.read(context).updateSettings(
-      AppSettings(
+    final repo = RepositoryScope.read(context);
+    repo.updateSettings(
+      repo.settings.copyWith(
         staleDays: _staleDays,
         riskDays: _riskDays,
         metricMinObservations: _metricMinObservations,
@@ -206,7 +206,7 @@ class _SettingsPageState extends State<SettingsPage> {
             padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
             child: Text(
               '目标管理 · 首版 MVP\n\n'
-              '五种机制：完成型、累积型、指标达成型、主观/动态型、里程碑型。\n'
+              '五种机制：完成型、累积型、指标型、主观型、里程碑型。\n'
               '进度是派生值，完成判定与生命周期分别记录；原始读数始终保留。\n'
               '承诺不改变目标状态，复盘只产出决定。',
               style: TextStyle(

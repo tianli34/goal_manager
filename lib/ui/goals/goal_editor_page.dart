@@ -6,7 +6,9 @@ import '../../core/enums.dart';
 import '../../core/ids.dart';
 import '../../core/numbers.dart';
 import '../../models/goal.dart';
+import '../home.dart';
 import '../scope.dart';
+import '../theme.dart';
 import '../widgets/common.dart';
 import '../widgets/pickers.dart';
 
@@ -35,7 +37,6 @@ class _GoalEditorPageState extends State<GoalEditorPage> {
   late final TextEditingController _reason;
 
   late Mechanism _mechanism;
-  late Lifecycle _lifecycle;
   late ExecutionMode _executionMode;
   late bool _isRequired;
   late int _stableWindow;
@@ -46,6 +47,11 @@ class _GoalEditorPageState extends State<GoalEditorPage> {
   bool get _isEditing => widget.goal != null;
   bool get _hasParent =>
       widget.parent != null || widget.goal?.parentGoalId != null;
+
+  bool get _startsImmediately {
+    final start = _startDate;
+    return start != null && !dateOnly(start).isAfter(dateOnly(DateTime.now()));
+  }
 
   @override
   void initState() {
@@ -73,7 +79,6 @@ class _GoalEditorPageState extends State<GoalEditorPage> {
     );
     _reason = TextEditingController();
     _mechanism = goal?.mechanism ?? Mechanism.completion;
-    _lifecycle = goal?.lifecycle ?? Lifecycle.active;
     _executionMode = goal?.executionMode ?? ExecutionMode.parallel;
     _isRequired = goal?.isRequired ?? true;
     _stableWindow = goal?.stableWindow ?? 3;
@@ -102,7 +107,10 @@ class _GoalEditorPageState extends State<GoalEditorPage> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Scaffold(
-      appBar: AppBar(title: Text(_isEditing ? '编辑目标' : '新建目标')),
+      appBar: AppBar(
+        title: Text(_isEditing ? '编辑目标' : '新建目标'),
+        actions: const [HomeButton()],
+      ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
         children: [
@@ -157,25 +165,17 @@ class _GoalEditorPageState extends State<GoalEditorPage> {
                   value: '${_mechanism.label} · ${_mechanism.description}',
                 )
               else ...[
-                InputDecorator(
-                  decoration: const InputDecoration(labelText: '选择机制'),
-                  child: DropdownButtonHideUnderline(
-                    child: DropdownButton<Mechanism>(
-                      value: _mechanism,
-                      isExpanded: true,
-                      items: Mechanism.values
-                          .map(
-                            (m) => DropdownMenuItem(
-                              value: m,
-                              child: Text(m.label),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: (value) {
-                        if (value != null) setState(() => _mechanism = value);
-                      },
-                    ),
-                  ),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final mechanism in Mechanism.values)
+                      _MechanismOption(
+                        mechanism: mechanism,
+                        selected: _mechanism == mechanism,
+                        onTap: () => setState(() => _mechanism = mechanism),
+                      ),
+                  ],
                 ),
                 const SizedBox(height: 8),
                 Text(
@@ -334,17 +334,21 @@ class _GoalEditorPageState extends State<GoalEditorPage> {
                 children: [
                   Expanded(
                     child: _DateField(
-                      label: '开始日期',
+                      label: _isEditing ? '开始日期' : '定时启动',
                       value: _startDate,
                       onPick: () async {
                         final date = await pickDate(
                           context,
                           initial: _startDate,
-                          helpText: '选择开始日期',
+                          helpText: _isEditing ? '选择开始日期' : '选择定时启动日期',
                         );
                         if (date != null) setState(() => _startDate = date);
                       },
-                      onClear: () => setState(() => _startDate = null),
+                      onClear:
+                          _isEditing &&
+                              widget.goal!.lifecycle == Lifecycle.active
+                          ? null
+                          : () => setState(() => _startDate = null),
                     ),
                   ),
                   const SizedBox(width: 10),
@@ -367,7 +371,11 @@ class _GoalEditorPageState extends State<GoalEditorPage> {
               ),
               const SizedBox(height: 8),
               Text(
-                '日期可选。没有起止日期时，不计算时间线和配速。',
+                _isEditing
+                    ? (widget.goal!.lifecycle == Lifecycle.active
+                          ? '进行中的目标必须保留开始日期；截止日期可选。'
+                          : '日期可选。没有起止日期时，不计算时间线和配速。')
+                    : '设为今天或更早：创建后立即启动；设为未来日期：到达当天自动启动；不设置则先保持未激活。',
                 style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
               ),
               const SizedBox(height: 12),
@@ -388,34 +396,6 @@ class _GoalEditorPageState extends State<GoalEditorPage> {
               ),
             ],
           ),
-          if (!_isEditing) ...[
-            const SizedBox(height: 14),
-            _Section(
-              title: '初始状态',
-              children: [
-                SegmentedButton<Lifecycle>(
-                  segments: const [
-                    ButtonSegment(value: Lifecycle.active, label: Text('立即进行')),
-                    ButtonSegment(value: Lifecycle.pending, label: Text('待开始')),
-                  ],
-                  selected: {_lifecycle},
-                  onSelectionChanged: (value) =>
-                      setState(() => _lifecycle = value.first),
-                ),
-                if (widget.parent?.executionMode == ExecutionMode.sequential)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 8),
-                    child: Text(
-                      '父级是串行里程碑：子项会按顺序自动解锁。',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: scheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ],
           if (_hasParent) ...[
             const SizedBox(height: 14),
             _Section(
@@ -470,7 +450,9 @@ class _GoalEditorPageState extends State<GoalEditorPage> {
           FilledButton.icon(
             onPressed: _save,
             icon: const Icon(Icons.check),
-            label: Text(_isEditing ? '保存修改' : '创建目标'),
+            label: Text(
+              _isEditing ? '保存修改' : (_startsImmediately ? '启动目标' : '创建目标'),
+            ),
           ),
           const SizedBox(height: 8),
           Text(
@@ -531,7 +513,9 @@ class _GoalEditorPageState extends State<GoalEditorPage> {
       why: _why.text.trim(),
       successCriteria: _criteria.text.trim(),
       mechanism: existing?.mechanism ?? _mechanism,
-      lifecycle: existing?.lifecycle ?? _lifecycle,
+      lifecycle:
+          existing?.lifecycle ??
+          (_startsImmediately ? Lifecycle.active : Lifecycle.pending),
       startDate: _startDate,
       dueDate: _dueDate,
       domain: _domain.text.trim(),
@@ -623,6 +607,64 @@ class _NumberField extends StatelessWidget {
   }
 }
 
+class _MechanismOption extends StatelessWidget {
+  const _MechanismOption({
+    required this.mechanism,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final Mechanism mechanism;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final color = mechanismColor(mechanism);
+    final foreground = selected ? color : scheme.onSurfaceVariant;
+    return Material(
+      color: selected ? color.withValues(alpha: 0.12) : Colors.transparent,
+      shape: StadiumBorder(
+        side: BorderSide(
+          color: selected ? color : scheme.outlineVariant,
+          width: selected ? 1.2 : 1,
+        ),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(_mechanismIcon(mechanism), size: 16, color: foreground),
+              const SizedBox(width: 5),
+              Text(
+                mechanism.label,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                  color: foreground,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+IconData _mechanismIcon(Mechanism mechanism) => switch (mechanism) {
+  Mechanism.completion => Icons.check_circle_outline,
+  Mechanism.cumulative => Icons.stacked_line_chart,
+  Mechanism.metric => Icons.trending_up,
+  Mechanism.milestone => Icons.account_tree_outlined,
+  Mechanism.subjective => Icons.tune,
+};
+
 class _ReadonlyValue extends StatelessWidget {
   const _ReadonlyValue({required this.label, required this.value});
 
@@ -649,20 +691,20 @@ class _DateField extends StatelessWidget {
   final String label;
   final DateTime? value;
   final VoidCallback onPick;
-  final VoidCallback onClear;
+  final VoidCallback? onClear;
 
   @override
   Widget build(BuildContext context) {
     return InputDecorator(
       decoration: InputDecoration(
         labelText: label,
-        suffixIcon: value == null
-            ? const Icon(Icons.calendar_today_outlined, size: 18)
-            : IconButton(
+        suffixIcon: value != null && onClear != null
+            ? IconButton(
                 tooltip: '清除',
                 icon: const Icon(Icons.close, size: 17),
                 onPressed: onClear,
-              ),
+              )
+            : const Icon(Icons.calendar_today_outlined, size: 18),
       ),
       child: InkWell(
         onTap: onPick,

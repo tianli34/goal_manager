@@ -28,7 +28,7 @@ class GoalManagerApp extends StatelessWidget {
           GlobalWidgetsLocalizations.delegate,
           GlobalCupertinoLocalizations.delegate,
         ],
-        home: const AppShell(),
+        home: AppShell(key: AppShell.homeKey),
       ),
     );
   }

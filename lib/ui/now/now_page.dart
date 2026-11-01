@@ -29,10 +29,7 @@ class NowPage extends StatelessWidget {
     final commitments = repo.commitmentsBetween(week, weekLast);
     final signals = computeSignals(repo.data, now);
     final activeGoals =
-        repo
-            .topLevelGoals()
-            .where((g) => g.lifecycle == Lifecycle.active)
-            .toList()
+        repo.leafGoals().where((g) => g.lifecycle == Lifecycle.active).toList()
           ..sort(_compareGoals);
     final focusGoals = activeGoals.take(5).toList();
 
@@ -124,7 +121,7 @@ class NowPage extends StatelessWidget {
           const EmptyState(
             icon: Icons.play_circle_outline,
             title: '没有进行中的目标',
-            message: '可以在目标页开始一个待开始的目标。',
+            message: '可以在目标页启动一个未激活的目标。',
             compact: true,
           )
         else

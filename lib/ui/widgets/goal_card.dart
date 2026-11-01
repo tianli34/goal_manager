@@ -10,16 +10,10 @@ import '../theme.dart';
 import 'common.dart';
 
 class GoalCard extends StatelessWidget {
-  const GoalCard({
-    super.key,
-    required this.goal,
-    required this.onTap,
-    this.showFocus = true,
-  });
+  const GoalCard({super.key, required this.goal, required this.onTap});
 
   final Goal goal;
   final VoidCallback onTap;
-  final bool showFocus;
 
   @override
   Widget build(BuildContext context) {
@@ -31,9 +25,12 @@ class GoalCard extends StatelessWidget {
       metricMinObservations: repo.settings.metricMinObservations,
     );
     final pacing = computePacing(goal, snapshot, repo.goals, DateTime.now());
-    final focus = showFocus ? focusedChild(goal, repo.goals) : null;
     final scheme = Theme.of(context).colorScheme;
     final color = mechanismColor(goal.mechanism);
+    final canStart =
+        !goal.isArchived &&
+        (goal.lifecycle == Lifecycle.pending ||
+            goal.lifecycle == Lifecycle.paused);
 
     return Card(
       child: InkWell(
@@ -124,29 +121,19 @@ class GoalCard extends StatelessWidget {
                   ),
                 ),
               ],
-              if (focus != null) ...[
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Icon(
-                      Icons.play_circle_outline,
-                      size: 13,
-                      color: scheme.primary,
+              if (canStart) ...[
+                const SizedBox(height: 10),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: FilledButton.tonalIcon(
+                    onPressed: () => _start(context),
+                    style: FilledButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(horizontal: 14),
                     ),
-                    const SizedBox(width: 4),
-                    Expanded(
-                      child: Text(
-                        '当前：${focus.title}',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 11.5,
-                          color: scheme.primary,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ),
-                  ],
+                    icon: const Icon(Icons.play_arrow_rounded, size: 18),
+                    label: const Text('启动'),
+                  ),
                 ),
               ],
             ],
@@ -154,5 +141,15 @@ class GoalCard extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  void _start(BuildContext context) {
+    final repo = RepositoryScope.read(context);
+    final error = repo.changeLifecycle(goal.id, Lifecycle.active);
+    if (error != null) {
+      showAppSnack(context, error, error: true);
+    } else {
+      showAppSnack(context, '已启动目标');
+    }
   }
 }

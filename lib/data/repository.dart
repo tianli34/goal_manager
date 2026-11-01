@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 
+import '../core/date_utils.dart';
 import '../core/enums.dart';
 import '../core/ids.dart';
 import '../data/export.dart';
@@ -54,13 +55,28 @@ class GoalRepository extends ChangeNotifier {
         .toList();
   }
 
-  List<Goal> topLevelGoals({bool includeArchived = false}) {
-    return _data.goals
-        .where(
-          (g) => g.parentGoalId == null && (includeArchived || !g.isArchived),
-        )
+  /// 列表只展示最底层的可执行目标，有可见子项的目标视为容器而不直接出现。
+  List<Goal> leafGoals({bool includeArchived = false}) {
+    final visible = _data.goals
+        .where((g) => includeArchived || !g.isArchived)
         .toList();
+    final parentIds = visible
+        .map((g) => g.parentGoalId)
+        .whereType<String>()
+        .toSet();
+    return visible.where((g) => !parentIds.contains(g.id)).toList();
   }
+
+  /// 决定是否把「新建」移到标题栏的计数：顶层、未归档、且不属于未激活。
+  int get topLevelGoalCount => _data.goals
+      .where(
+        (g) =>
+            g.parentGoalId == null &&
+            !g.isArchived &&
+            g.lifecycle != Lifecycle.pending &&
+            g.lifecycle != Lifecycle.paused,
+      )
+      .length;
 
   List<UpdateRecord> recordsFor(String goalId, {bool descending = true}) {
     final list = _data.records.where((r) => r.goalId == goalId).toList();
@@ -99,6 +115,7 @@ class GoalRepository extends ChangeNotifier {
       loadError = '本地数据读取失败：$error';
       _data = AppData();
     }
+    activateScheduledGoals();
   }
 
   Future<void> flush() => _saveQueue;
@@ -170,9 +187,11 @@ class GoalRepository extends ChangeNotifier {
     } else if (parent.executionMode == ExecutionMode.sequential) {
       prepared = prepared.copyWith(lifecycle: Lifecycle.pending);
     } else if (parent.lifecycle == Lifecycle.active &&
-        prepared.lifecycle == Lifecycle.pending) {
+        prepared.lifecycle == Lifecycle.pending &&
+        _startReached(prepared, now)) {
       prepared = prepared.copyWith(lifecycle: Lifecycle.active);
     }
+    prepared = _ensureStartDate(prepared, now);
     _data.goals.add(prepared);
     _appendRecord(
       goalId: prepared.id,
@@ -216,6 +235,12 @@ class GoalRepository extends ChangeNotifier {
     if (old.stableWindow != normalized.stableWindow) changes.add('稳定达标窗口');
     if (old.weight != normalized.weight) changes.add('权重');
     if (old.isRequired != normalized.isRequired) changes.add('是否必需');
+
+    if (normalized.lifecycle == Lifecycle.active &&
+        (normalized.startDate == null ||
+            dateOnly(normalized.startDate!).isAfter(dateOnly(now)))) {
+      return '进行中的目标必须保留不晚于今天的开始日期';
+    }
 
     _replace(normalized);
     if (changes.isNotEmpty) {
@@ -353,10 +378,13 @@ class GoalRepository extends ChangeNotifier {
     if (goal.lifecycle != Lifecycle.completed) return '只有已完成的目标可以重新打开';
     final time = DateTime.now();
     _replace(
-      goal.copyWith(
-        lifecycle: Lifecycle.active,
-        completedAt: null,
-        updatedAt: time,
+      _ensureStartDate(
+        goal.copyWith(
+          lifecycle: Lifecycle.active,
+          completedAt: null,
+          updatedAt: time,
+        ),
+        time,
       ),
     );
     _appendRecord(
@@ -380,7 +408,9 @@ class GoalRepository extends ChangeNotifier {
       return '已完成的目标请使用「重新打开」';
     }
     final time = DateTime.now();
-    _replace(goal.copyWith(lifecycle: status, updatedAt: time));
+    _replace(
+      _ensureStartDate(goal.copyWith(lifecycle: status, updatedAt: time), time),
+    );
     _appendRecord(
       goalId: goalId,
       type: RecordType.lifecycleChange,
@@ -393,6 +423,74 @@ class GoalRepository extends ChangeNotifier {
     _commit();
     return null;
   }
+
+  /// 到达定时启动日期的未激活目标转为进行中；日期为空的目标不受影响。
+  void activateScheduledGoals({DateTime? at}) {
+    final time = at ?? DateTime.now();
+    final today = dateOnly(time);
+    var changed = false;
+    for (final goal in List<Goal>.from(_data.goals)) {
+      final start = goal.startDate;
+      if (goal.lifecycle != Lifecycle.pending ||
+          goal.isArchived ||
+          start == null ||
+          dateOnly(start).isAfter(today)) {
+        continue;
+      }
+      _replace(
+        _ensureStartDate(
+          goal.copyWith(lifecycle: Lifecycle.active, updatedAt: time),
+          time,
+        ),
+      );
+      _appendRecord(
+        goalId: goal.id,
+        type: RecordType.lifecycleChange,
+        at: time,
+        note: '定时启动',
+      );
+      changed = true;
+    }
+    if (!changed) return;
+    _applyMilestoneRules(at: time);
+    _commit();
+  }
+
+  bool _startReached(Goal goal, DateTime now) {
+    final start = goal.startDate;
+    return start == null || !dateOnly(start).isAfter(dateOnly(now));
+  }
+
+  /// 进行中的目标必须有开始日期；首次激活时记为激活当天。
+  Goal _ensureStartDate(Goal goal, DateTime time) {
+    if (goal.lifecycle != Lifecycle.active) return goal;
+    final start = goal.startDate;
+    final today = dateOnly(time);
+    if (start != null && !dateOnly(start).isAfter(today)) return goal;
+    return goal.copyWith(startDate: today);
+  }
+
+  /// 旧数据里缺少开始日期的进行中目标，按最早一次激活记录回填。
+  DateTime? _legacyStartDate(Goal goal, List<UpdateRecord> records) {
+    if (goal.startDate != null || goal.lifecycle != Lifecycle.active) {
+      return goal.startDate;
+    }
+    DateTime? first;
+    for (final record in records) {
+      if (record.goalId != goal.id ||
+          record.type != RecordType.lifecycleChange ||
+          !_isActivationNote(record.note)) {
+        continue;
+      }
+      if (first == null || record.timestamp.isBefore(first)) {
+        first = record.timestamp;
+      }
+    }
+    return dateOnly(first ?? goal.createdAt);
+  }
+
+  bool _isActivationNote(String note) =>
+      note.contains('→ 进行中') || note == '定时启动' || note == '重新打开';
 
   void setArchived(String goalId, bool archived) {
     final goal = goalById(goalId);
@@ -619,6 +717,7 @@ class GoalRepository extends ChangeNotifier {
       goals.add(
         goal.copyWith(
           parentGoalId: parentId,
+          startDate: _legacyStartDate(goal, input.records),
           subjectivePercent: goal.subjectivePercent.clamp(0, 100).toInt(),
           stableWindow: goal.stableWindow.clamp(1, 30).toInt(),
           completedAt:
@@ -743,9 +842,13 @@ class GoalRepository extends ChangeNotifier {
                 child.lifecycle == Lifecycle.terminated) {
               continue;
             }
-            if (child.lifecycle == Lifecycle.pending) {
+            if (child.lifecycle == Lifecycle.pending &&
+                _startReached(child, time)) {
               _replace(
-                child.copyWith(lifecycle: Lifecycle.active, updatedAt: time),
+                _ensureStartDate(
+                  child.copyWith(lifecycle: Lifecycle.active, updatedAt: time),
+                  time,
+                ),
               );
               changed = true;
             }
@@ -753,9 +856,13 @@ class GoalRepository extends ChangeNotifier {
           }
         } else {
           for (final child in children) {
-            if (child.lifecycle == Lifecycle.pending) {
+            if (child.lifecycle == Lifecycle.pending &&
+                _startReached(child, time)) {
               _replace(
-                child.copyWith(lifecycle: Lifecycle.active, updatedAt: time),
+                _ensureStartDate(
+                  child.copyWith(lifecycle: Lifecycle.active, updatedAt: time),
+                  time,
+                ),
               );
               changed = true;
             }

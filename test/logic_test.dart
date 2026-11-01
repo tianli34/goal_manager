@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:goal_manager/core/date_utils.dart';
 import 'package:goal_manager/core/enums.dart';
 import 'package:goal_manager/data/repository.dart';
 import 'package:goal_manager/data/storage.dart';
@@ -8,6 +9,7 @@ import 'package:goal_manager/logic/signals.dart';
 import 'package:goal_manager/models/app_data.dart';
 import 'package:goal_manager/models/goal.dart';
 import 'package:goal_manager/models/review.dart';
+import 'package:goal_manager/models/settings.dart';
 import 'package:goal_manager/models/update_record.dart';
 
 Future<GoalRepository> emptyRepo() async {
@@ -217,6 +219,192 @@ void main() {
       repo.recordCumulative('child', 100);
       expect(repo.goalById('child')!.lifecycle, Lifecycle.completed);
       expect(repo.goalById('p')!.lifecycle, Lifecycle.completed);
+    });
+
+    test('到达定时启动日期的目标激活，未来日期保持未激活', () async {
+      final repo = await emptyRepo();
+      final today = dateOnly(DateTime.now());
+      repo.addGoal(
+        Goal(
+          id: 'today',
+          title: 'today',
+          lifecycle: Lifecycle.pending,
+          startDate: today,
+        ),
+      );
+      repo.addGoal(
+        Goal(
+          id: 'future',
+          title: 'future',
+          lifecycle: Lifecycle.pending,
+          startDate: today.add(const Duration(days: 2)),
+        ),
+      );
+
+      repo.activateScheduledGoals();
+      expect(repo.goalById('today')!.lifecycle, Lifecycle.active);
+      expect(repo.goalById('future')!.lifecycle, Lifecycle.pending);
+      expect(repo.recordsFor('today').any((r) => r.note == '定时启动'), isTrue);
+    });
+
+    test('重启应用时自动激活已到期的定时启动目标', () async {
+      final storage = MemoryAppStorage();
+      final repo = GoalRepository(storage);
+      await repo.init();
+      repo.addGoal(
+        Goal(
+          id: 'scheduled',
+          title: 'scheduled',
+          lifecycle: Lifecycle.pending,
+          startDate: dateOnly(DateTime.now()),
+        ),
+      );
+      await repo.flush();
+
+      final reopened = GoalRepository(storage);
+      await reopened.init();
+      expect(reopened.goalById('scheduled')!.lifecycle, Lifecycle.active);
+    });
+
+    test('未来定时启动的里程碑子项不会被立即激活', () async {
+      final repo = await emptyRepo();
+      repo.addGoal(goalOf('p', Mechanism.milestone));
+      repo.addGoal(
+        Goal(
+          id: 'child',
+          title: 'child',
+          parentGoalId: 'p',
+          lifecycle: Lifecycle.pending,
+          startDate: dateOnly(DateTime.now()).add(const Duration(days: 3)),
+        ),
+      );
+
+      expect(repo.goalById('child')!.lifecycle, Lifecycle.pending);
+      repo.activateScheduledGoals();
+      expect(repo.goalById('child')!.lifecycle, Lifecycle.pending);
+    });
+
+    test('启动未激活目标时写入开始日期', () async {
+      final repo = await emptyRepo();
+      repo.addGoal(Goal(id: 'g', title: 'g', lifecycle: Lifecycle.pending));
+      expect(repo.goalById('g')!.startDate, isNull);
+
+      repo.changeLifecycle('g', Lifecycle.active);
+      expect(repo.goalById('g')!.lifecycle, Lifecycle.active);
+      expect(repo.goalById('g')!.startDate, dateOnly(DateTime.now()));
+    });
+
+    test('提前启动未来定时目标时开始日期改为实际启动日', () async {
+      final repo = await emptyRepo();
+      repo.addGoal(
+        Goal(
+          id: 'g',
+          title: 'g',
+          lifecycle: Lifecycle.pending,
+          startDate: dateOnly(DateTime.now()).add(const Duration(days: 3)),
+        ),
+      );
+
+      repo.changeLifecycle('g', Lifecycle.active);
+      expect(repo.goalById('g')!.startDate, dateOnly(DateTime.now()));
+    });
+
+    test('里程碑子项自动激活时写入开始日期', () async {
+      final repo = await emptyRepo();
+      repo.addGoal(goalOf('p', Mechanism.milestone));
+      repo.addGoal(
+        Goal(
+          id: 'child',
+          title: 'child',
+          parentGoalId: 'p',
+          lifecycle: Lifecycle.pending,
+        ),
+      );
+
+      expect(repo.goalById('child')!.lifecycle, Lifecycle.active);
+      expect(repo.goalById('child')!.startDate, dateOnly(DateTime.now()));
+    });
+
+    test('加载旧数据时为进行中目标回填最早激活日期', () async {
+      final repo = await emptyRepo();
+      repo.importJson('''
+{
+  "schemaVersion": 1,
+  "goals": [
+    {
+      "id": "g",
+      "title": "旧目标",
+      "lifecycle": "active",
+      "createdAt": "2026-01-01T09:00:00.000",
+      "updatedAt": "2026-02-03T10:00:00.000"
+    }
+  ],
+  "records": [
+    {
+      "id": "r1",
+      "goalId": "g",
+      "type": "lifecycleChange",
+      "timestamp": "2026-02-03T10:00:00.000",
+      "note": "状态：未激活 → 进行中"
+    },
+    {
+      "id": "r2",
+      "goalId": "g",
+      "type": "lifecycleChange",
+      "timestamp": "2026-02-10T10:00:00.000",
+      "note": "状态：进行中 → 暂停"
+    }
+  ]
+}
+''');
+
+      expect(repo.goalById('g')!.startDate, DateTime(2026, 2, 3));
+    });
+
+    test('目标列表只返回最底层叶子目标', () async {
+      final repo = await emptyRepo();
+      repo.addGoal(goalOf('a', Mechanism.milestone));
+      repo.addGoal(goalOf('b', Mechanism.milestone, parent: 'a'));
+      repo.addGoal(goalOf('c', Mechanism.completion, parent: 'b'));
+      repo.addGoal(goalOf('d', Mechanism.completion));
+
+      expect(repo.leafGoals().map((g) => g.id).toList(), ['c', 'd']);
+    });
+
+    test('标题栏新建计数排除归档、未激活与子目标', () async {
+      final repo = await emptyRepo();
+      repo.addGoal(goalOf('active', Mechanism.completion));
+      repo.addGoal(
+        goalOf('pending', Mechanism.completion, lifecycle: Lifecycle.pending),
+      );
+      repo.addGoal(
+        goalOf('paused', Mechanism.completion, lifecycle: Lifecycle.paused),
+      );
+      repo.addGoal(
+        goalOf(
+          'completed',
+          Mechanism.completion,
+          lifecycle: Lifecycle.completed,
+        ),
+      );
+      repo.addGoal(goalOf('parent', Mechanism.milestone));
+      repo.addGoal(goalOf('child', Mechanism.completion, parent: 'parent'));
+      repo.addGoal(goalOf('archived', Mechanism.completion));
+      repo.setArchived('archived', true);
+
+      expect(repo.topLevelGoalCount, 3);
+    });
+
+    test('标题栏新建标记可随设置持久化', () {
+      expect(
+        AppSettings.fromJson(AppSettings().toJson()).newGoalInAppBar,
+        isFalse,
+      );
+      expect(
+        AppSettings.fromJson(AppSettings(newGoalInAppBar: true).toJson())
+            .newGoalInAppBar,
+        isTrue,
+      );
     });
 
     test('承诺按周期内真实增量判定，修改目标值不会自动兑现', () async {

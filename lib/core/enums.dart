@@ -1,8 +1,8 @@
 enum Mechanism {
   completion('完成型', '做完即达成，无中间进度'),
   cumulative('累积型', '往目标总量上累加，可增可减'),
-  metric('指标达成型', '读数从起点走向目标，会波动回退'),
-  subjective('主观/动态型', '以时间线记录为主，进度由自己判断'),
+  metric('指标型', '读数从起点走向目标，会波动回退'),
+  subjective('主观型', '以时间线记录为主，进度由自己判断'),
   milestone('里程碑型', '由子项组成，进度从子项上卷');
 
   const Mechanism(this.label, this.description);
@@ -17,7 +17,7 @@ enum Mechanism {
 }
 
 enum Lifecycle {
-  pending('待开始'),
+  pending('未激活'),
   active('进行中'),
   paused('暂停'),
   completed('已完成'),
