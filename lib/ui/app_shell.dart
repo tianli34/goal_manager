@@ -22,6 +22,8 @@ class AppShellState extends State<AppShell> with WidgetsBindingObserver {
 
   final _goalsKey = GlobalKey<GoalsPageState>();
   int _index = 0;
+
+  int get selectedIndex => _index;
   bool _promoteScheduled = false;
 
   @override

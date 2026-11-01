@@ -20,41 +20,21 @@ class GoalsPage extends StatefulWidget {
 
 class GoalsPageState extends State<GoalsPage> {
   _GoalFilter _filter = _GoalFilter.active;
-  String? _domain;
-  String? _tag;
   bool _includeArchived = false;
 
   @override
   Widget build(BuildContext context) {
     final repo = RepositoryScope.of(context);
     final scheme = Theme.of(context).colorScheme;
-    final allGoals = repo.goals;
-    final domains =
-        allGoals
-            .map((g) => g.domain)
-            .where((value) => value.isNotEmpty)
-            .toSet()
-            .toList()
-          ..sort();
-    final tags = allGoals.expand((g) => g.tags).toSet().toList()..sort();
-    final selectedDomain = _domain != null && domains.contains(_domain)
-        ? _domain
-        : null;
-    final selectedTag = _tag != null && tags.contains(_tag) ? _tag : null;
-
     var goals = repo.leafGoals(includeArchived: _includeArchived);
     goals = goals.where((goal) {
-      final matchesFilter = switch (_filter) {
+      return switch (_filter) {
         _GoalFilter.active => goal.lifecycle == Lifecycle.active,
         _GoalFilter.inactive =>
           goal.lifecycle == Lifecycle.pending ||
               goal.lifecycle == Lifecycle.paused,
         _GoalFilter.finished => goal.lifecycle.isFinished,
       };
-      final matchesDomain =
-          selectedDomain == null || goal.domain == selectedDomain;
-      final matchesTag = selectedTag == null || goal.tags.contains(selectedTag);
-      return matchesFilter && matchesDomain && matchesTag;
     }).toList();
     goals.sort((a, b) {
       if (_filter == _GoalFilter.finished) {
@@ -146,29 +126,8 @@ class GoalsPageState extends State<GoalsPage> {
           ),
           const SizedBox(height: 10),
           Row(
+            mainAxisAlignment: MainAxisAlignment.end,
             children: [
-              Expanded(
-                child: _CompactDropdown(
-                  label: '领域',
-                  value: selectedDomain ?? '',
-                  allLabel: '全部领域',
-                  values: domains,
-                  onChanged: (value) =>
-                      setState(() => _domain = value.isEmpty ? null : value),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: _CompactDropdown(
-                  label: '标签',
-                  value: selectedTag ?? '',
-                  allLabel: '全部标签',
-                  values: tags,
-                  onChanged: (value) =>
-                      setState(() => _tag = value.isEmpty ? null : value),
-                ),
-              ),
-              const SizedBox(width: 6),
               IconButton(
                 tooltip: _includeArchived ? '隐藏归档' : '包含归档',
                 onPressed: () =>
@@ -190,11 +149,9 @@ class GoalsPageState extends State<GoalsPage> {
             EmptyState(
               icon: Icons.filter_alt_off_outlined,
               title: '这个筛选下没有目标',
-              message: '可以调整领域、标签或生命周期筛选。',
+              message: '可以调整生命周期筛选。',
               action: OutlinedButton(
                 onPressed: () => setState(() {
-                  _domain = null;
-                  _tag = null;
                   _includeArchived = false;
                 }),
                 child: const Text('清除筛选'),
@@ -304,54 +261,6 @@ class _GoalActions extends StatelessWidget {
           label: const Text('更新'),
         ),
       ],
-    );
-  }
-}
-
-class _CompactDropdown extends StatelessWidget {
-  const _CompactDropdown({
-    required this.label,
-    required this.value,
-    required this.allLabel,
-    required this.values,
-    required this.onChanged,
-  });
-
-  final String label;
-  final String value;
-  final String allLabel;
-  final List<String> values;
-  final ValueChanged<String> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return InputDecorator(
-      decoration: InputDecoration(
-        labelText: label,
-        isDense: true,
-        contentPadding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
-      ),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<String>(
-          value: value,
-          isExpanded: true,
-          isDense: true,
-          style: TextStyle(
-            fontSize: 12.5,
-            color: Theme.of(context).colorScheme.onSurface,
-          ),
-          items: [
-            DropdownMenuItem(value: '', child: Text(allLabel)),
-            ...values.map(
-              (item) => DropdownMenuItem(
-                value: item,
-                child: Text(item, overflow: TextOverflow.ellipsis),
-              ),
-            ),
-          ],
-          onChanged: (value) => onChanged(value ?? ''),
-        ),
-      ),
     );
   }
 }

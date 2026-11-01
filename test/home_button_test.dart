@@ -65,4 +65,18 @@ void main() {
     expect(find.text('把注意力放在少数重要的事上'), findsOneWidget);
     expect(find.text('保存复盘'), findsNothing);
   });
+
+  testWidgets('一步可回主页的页面不显示悬浮按钮', (tester) async {
+    await pumpApp(tester);
+
+    await tester.tap(find.text('收集箱'));
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('回到主页'), findsNothing);
+    await tester.tap(find.byType(BackButton));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('完成三个案例'));
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('回到主页'), findsNothing);
+  });
 }

@@ -42,20 +42,22 @@ class _ReviewEditorPageState extends State<ReviewEditorPage> {
         .where((g) => !g.isArchived && g.lifecycle != Lifecycle.terminated)
         .toList();
     final scheme = Theme.of(context).colorScheme;
+    final showHome = shouldShowHomeButton(context);
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('新建复盘'),
         actions: [
-          const HomeButton(),
           TextButton(onPressed: _save, child: const Text('保存')),
           const SizedBox(width: 4),
         ],
       ),
+      floatingActionButton: showHome ? const HomeFloatingButton() : null,
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
       body: Form(
         key: _formKey,
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+          padding: EdgeInsets.fromLTRB(16, 8, 16, showHome ? 104 : 32),
           children: [
             Text(
               '${dayRangeText(start, end)} · 本周期复盘',

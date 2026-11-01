@@ -26,10 +26,13 @@ class GoalDetailPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final repo = RepositoryScope.of(context);
+    final showHome = shouldShowHomeButton(context);
     final goal = repo.goalById(goalId);
     if (goal == null) {
       return Scaffold(
-        appBar: AppBar(actions: const [HomeButton()]),
+        appBar: AppBar(),
+        floatingActionButton: showHome ? const HomeFloatingButton() : null,
+        floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
         body: const EmptyState(
           icon: Icons.search_off,
           title: '目标不存在',
@@ -57,7 +60,6 @@ class GoalDetailPage extends StatelessWidget {
       appBar: AppBar(
         title: Text(goal.title, maxLines: 1, overflow: TextOverflow.ellipsis),
         actions: [
-          const HomeButton(),
           IconButton(
             tooltip: '编辑',
             icon: const Icon(Icons.edit_outlined),
@@ -70,8 +72,10 @@ class GoalDetailPage extends StatelessWidget {
           ),
         ],
       ),
+      floatingActionButton: showHome ? const HomeFloatingButton() : null,
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 36),
+        padding: EdgeInsets.fromLTRB(16, 0, 16, showHome ? 104 : 36),
         children: [
           _Header(
             goal: goal,
@@ -392,8 +396,6 @@ class _Header extends StatelessWidget {
           children: [
             MechanismChip(goal.mechanism),
             LifecycleChip(goal.lifecycle),
-            if (goal.domain.isNotEmpty) TagPill(goal.domain),
-            ...goal.tags.map((tag) => TagPill('#$tag')),
           ],
         ),
         const SizedBox(height: 10),
@@ -788,10 +790,6 @@ class _InfoCard extends StatelessWidget {
               value:
                   '${formatDate(goal.startDate)} → ${formatDate(goal.dueDate)}',
             ),
-            if (goal.domain.isNotEmpty)
-              InfoLine(label: '领域', value: goal.domain),
-            if (goal.tags.isNotEmpty)
-              InfoLine(label: '标签', value: goal.tags.join('、')),
             if (parent != null)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 5),

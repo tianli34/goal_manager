@@ -79,8 +79,6 @@ class GoalCard extends StatelessWidget {
                   MechanismChip(goal.mechanism, compact: true),
                   if (goal.lifecycle != Lifecycle.active)
                     LifecycleChip(goal.lifecycle),
-                  if (goal.domain.isNotEmpty) TagPill(goal.domain),
-                  ...goal.tags.take(2).map((tag) => TagPill('#$tag')),
                 ],
               ),
               if (snapshot.ratio != null) ...[

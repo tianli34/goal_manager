@@ -106,13 +106,13 @@ class _GoalEditorPageState extends State<GoalEditorPage> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final showHome = shouldShowHomeButton(context);
     return Scaffold(
-      appBar: AppBar(
-        title: Text(_isEditing ? '编辑目标' : '新建目标'),
-        actions: const [HomeButton()],
-      ),
+      appBar: AppBar(title: Text(_isEditing ? '编辑目标' : '新建目标')),
+      floatingActionButton: showHome ? const HomeFloatingButton() : null,
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+        padding: EdgeInsets.fromLTRB(16, 8, 16, showHome ? 104 : 32),
         children: [
           if (widget.parent != null)
             Padding(
@@ -377,22 +377,6 @@ class _GoalEditorPageState extends State<GoalEditorPage> {
                           : '日期可选。没有起止日期时，不计算时间线和配速。')
                     : '设为今天或更早：创建后立即启动；设为未来日期：到达当天自动启动；不设置则先保持未激活。',
                 style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _domain,
-                decoration: const InputDecoration(
-                  labelText: '领域（可选）',
-                  hintText: '如 健康 / 财务 / 学习',
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _tags,
-                decoration: const InputDecoration(
-                  labelText: '标签（可选）',
-                  hintText: '用逗号分隔，如 阅读，习惯',
-                ),
               ),
             ],
           ),

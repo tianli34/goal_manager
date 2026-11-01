@@ -3,6 +3,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'data/repository.dart';
 import 'ui/app_shell.dart';
+import 'ui/home.dart';
 import 'ui/scope.dart';
 import 'ui/theme.dart';
 
@@ -23,6 +24,7 @@ class GoalManagerApp extends StatelessWidget {
         themeMode: ThemeMode.system,
         locale: const Locale('zh', 'CN'),
         supportedLocales: const [Locale('zh', 'CN'), Locale('en')],
+        navigatorObservers: [HomeDepthObserver.instance],
         localizationsDelegates: const [
           GlobalMaterialLocalizations.delegate,
           GlobalWidgetsLocalizations.delegate,

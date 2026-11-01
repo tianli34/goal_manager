@@ -60,8 +60,7 @@ class _GoalPickerSheetState extends State<_GoalPickerSheet> {
         .where(
           (g) =>
               _query.isEmpty ||
-              g.title.toLowerCase().contains(_query.toLowerCase()) ||
-              g.domain.toLowerCase().contains(_query.toLowerCase()),
+              g.title.toLowerCase().contains(_query.toLowerCase()),
         )
         .toList();
     return Padding(
@@ -94,7 +93,7 @@ class _GoalPickerSheetState extends State<_GoalPickerSheet> {
                 controller: _controller,
                 onChanged: (value) => setState(() => _query = value.trim()),
                 decoration: const InputDecoration(
-                  hintText: '搜索标题或领域',
+                  hintText: '搜索标题',
                   prefixIcon: Icon(Icons.search),
                   isDense: true,
                 ),
@@ -127,7 +126,6 @@ class _GoalPickerSheetState extends State<_GoalPickerSheet> {
                             [
                               goal.mechanism.label,
                               goal.lifecycle.label,
-                              if (goal.domain.isNotEmpty) goal.domain,
                               if (goal.dueDate != null)
                                 '截止 ${formatDate(goal.dueDate)}',
                             ].join(' · '),
