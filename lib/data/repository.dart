@@ -208,7 +208,7 @@ class GoalRepository extends ChangeNotifier {
     final old = goalById(updated.id);
     if (old == null) return '目标不存在';
     final now = DateTime.now();
-    final normalized = updated.copyWith(
+    var normalized = updated.copyWith(
       createdAt: old.createdAt,
       updatedAt: now,
       mechanism: old.mechanism,
@@ -219,13 +219,17 @@ class GoalRepository extends ChangeNotifier {
       subjectivePercent: old.subjectivePercent,
       parentGoalId: old.parentGoalId,
     );
+    normalized = _applyDurationRule(normalized);
 
     final changes = <String>[];
     if (old.title != normalized.title) changes.add('标题');
     if (old.why != normalized.why) changes.add('为什么');
     if (old.successCriteria != normalized.successCriteria) changes.add('达成条件');
     if (old.startDate != normalized.startDate) changes.add('开始日期');
-    if (old.dueDate != normalized.dueDate) changes.add('截止日期');
+    // 历史记录里跟随用户选择的叫法，但底层始终是同一个 dueDate 字段。
+    if (old.dueDate != normalized.dueDate) {
+      changes.add(_data.settings.dueFieldMode.label);
+    }
     if (old.domain != normalized.domain) changes.add('领域');
     if (old.tags.join('|') != normalized.tags.join('|')) changes.add('标签');
     if (old.executionMode != normalized.executionMode) changes.add('子项模式');
@@ -463,11 +467,27 @@ class GoalRepository extends ChangeNotifier {
 
   /// 进行中的目标必须有开始日期；首次激活时记为激活当天。
   Goal _ensureStartDate(Goal goal, DateTime time) {
-    if (goal.lifecycle != Lifecycle.active) return goal;
+    if (goal.lifecycle != Lifecycle.active) return _applyDurationRule(goal);
     final start = goal.startDate;
     final today = dateOnly(time);
-    if (start != null && !dateOnly(start).isAfter(today)) return goal;
-    return goal.copyWith(startDate: today);
+    if (start != null && !dateOnly(start).isAfter(today)) {
+      return _applyDurationRule(goal);
+    }
+    return _applyDurationRule(goal.copyWith(startDate: today));
+  }
+
+  /// 「期限」是一条规则而非一个日期：结束日期只从开始日期推导。
+  /// 没有开始日期时规则先保留，结束日期为空，绝不拿今天兜底。
+  /// 创建、编辑、定时启动、状态变更、里程碑激活、导入恢复都会经过这里。
+  Goal _applyDurationRule(Goal goal) {
+    final rule = goal.durationRule;
+    if (rule == null) return goal;
+    final start = goal.startDate;
+    return goal.copyWith(
+      dueDate: start == null
+          ? null
+          : addCalendarDuration(start, rule.amount, rule.unit),
+    );
   }
 
   /// 旧数据里缺少开始日期的进行中目标，按最早一次激活记录回填。
@@ -715,15 +735,18 @@ class GoalRepository extends ChangeNotifier {
         }
       }
       goals.add(
-        goal.copyWith(
-          parentGoalId: parentId,
-          startDate: _legacyStartDate(goal, input.records),
-          subjectivePercent: goal.subjectivePercent.clamp(0, 100).toInt(),
-          stableWindow: goal.stableWindow.clamp(1, 30).toInt(),
-          completedAt:
-              goal.lifecycle == Lifecycle.completed && goal.completedAt == null
-              ? goal.updatedAt
-              : goal.completedAt,
+        _applyDurationRule(
+          goal.copyWith(
+            parentGoalId: parentId,
+            startDate: _legacyStartDate(goal, input.records),
+            subjectivePercent: goal.subjectivePercent.clamp(0, 100).toInt(),
+            stableWindow: goal.stableWindow.clamp(1, 30).toInt(),
+            completedAt:
+                goal.lifecycle == Lifecycle.completed &&
+                    goal.completedAt == null
+                ? goal.updatedAt
+                : goal.completedAt,
+          ),
         ),
       );
     }

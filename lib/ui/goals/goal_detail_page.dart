@@ -461,6 +461,23 @@ class _Header extends StatelessWidget {
               ),
             ],
           ),
+        ] else if (goal.durationLabel != null) ...[
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Icon(Icons.schedule, size: 14, color: scheme.onSurfaceVariant),
+              const SizedBox(width: 4),
+              Flexible(
+                child: Text(
+                  '期限 ${goal.durationLabel} · 未设置开始日期，暂不计算结束日期',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ],
       ],
     );
@@ -790,6 +807,8 @@ class _InfoCard extends StatelessWidget {
               value:
                   '${formatDate(goal.startDate)} → ${formatDate(goal.dueDate)}',
             ),
+            if (goal.durationLabel != null)
+              InfoLine(label: '期限', value: '${goal.durationLabel}，从开始日期起算'),
             if (parent != null)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 5),

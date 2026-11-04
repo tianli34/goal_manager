@@ -44,6 +44,15 @@ class _GoalEditorPageState extends State<GoalEditorPage> {
   DateTime? _startDate;
   DateTime? _dueDate;
 
+  /// 「期限」输入框。时长规则会随目标一起保存，结束日期由开始日期推导。
+  late final TextEditingController _duration;
+  late DurationUnit _durationUnit;
+
+  /// 已有日期无法反推成正时长时（无开始日期、或结束日期不晚于开始日期），
+  /// 该次编辑临时退回日期选择，并说明原因。
+  late bool _durationUsable;
+  late String _durationFallbackReason;
+
   bool get _isEditing => widget.goal != null;
   bool get _hasParent =>
       widget.parent != null || widget.goal?.parentGoalId != null;
@@ -51,6 +60,101 @@ class _GoalEditorPageState extends State<GoalEditorPage> {
   bool get _startsImmediately {
     final start = _startDate;
     return start != null && !dateOnly(start).isAfter(dateOnly(DateTime.now()));
+  }
+
+  /// 期限只从开始日期起算；没有开始日期就没有锚点，也不产生结束日期。
+  int? get _durationAmount {
+    final amount = int.tryParse(_duration.text.trim());
+    return amount == null || amount <= 0 ? null : amount;
+  }
+
+  String _durationHint() {
+    final raw = _duration.text.trim();
+    if (raw.isEmpty) return '填写时长后从开始日期推算结束日期；留空表示不设期限。';
+    final amount = _durationAmount;
+    if (amount == null) return '请输入大于 0 的整数时长。';
+    final start = _startDate;
+    final unit = _durationUnit.label;
+    if (start == null) {
+      return '$raw $unit，从开始日期起算；未设置开始日期，暂不计算结束日期，规则会随目标保存。';
+    }
+    final due = addCalendarDuration(start, amount, _durationUnit);
+    return '从 ${formatDate(start)} 起 $raw $unit，结束于 ${formatDate(due)}；改动开始日期会同步顺延。';
+  }
+
+  /// 编辑旧目标时，补上开始日期后可以把已有结束日期反推回时长输入。
+  void _refreshDurationFromDates() {
+    if (_durationUsable || _duration.text.trim().isNotEmpty) return;
+    final start = _startDate;
+    final due = _dueDate;
+    if (start == null || due == null) return;
+    final inferred = inferCalendarDuration(start, due);
+    if (inferred == null) return;
+    setState(() {
+      _durationUsable = true;
+      _duration.text = '${inferred.amount}';
+      _durationUnit = inferred.unit;
+    });
+  }
+
+  /// 时长输入需要「数字 + 单位下拉」，窄屏下与开始日期并排会被挤没，故改为上下排列。
+  Widget _dateFields(bool useDuration, String dueLabel) {
+    final startField = _DateField(
+      label: _isEditing ? '开始日期' : '定时启动',
+      value: _startDate,
+      onPick: () async {
+        final date = await pickDate(
+          context,
+          initial: _startDate,
+          helpText: _isEditing ? '选择开始日期' : '选择定时启动日期',
+        );
+        if (date != null) {
+          setState(() => _startDate = date);
+          _refreshDurationFromDates();
+        }
+      },
+      onClear: _isEditing && widget.goal!.lifecycle == Lifecycle.active
+          ? null
+          : () => setState(() => _startDate = null),
+    );
+    final dueField = useDuration
+        ? _DurationField(
+            controller: _duration,
+            unit: _durationUnit,
+            onChanged: (_) => setState(() {}),
+            onUnitChanged: (unit) => setState(() => _durationUnit = unit),
+            onClear: () {
+              _duration.clear();
+              setState(() {});
+            },
+          )
+        : _DateField(
+            label: dueLabel,
+            value: _dueDate,
+            onPick: () async {
+              final date = await pickDate(
+                context,
+                initial: _dueDate,
+                helpText: '选择$dueLabel',
+              );
+              if (date != null) setState(() => _dueDate = date);
+            },
+            onClear: () => setState(() => _dueDate = null),
+          );
+    if (useDuration) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [startField, const SizedBox(height: 10), dueField],
+      );
+    }
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(child: startField),
+        const SizedBox(width: 10),
+        Expanded(child: dueField),
+      ],
+    );
   }
 
   @override
@@ -85,6 +189,34 @@ class _GoalEditorPageState extends State<GoalEditorPage> {
     _subjectivePercent = (goal?.subjectivePercent ?? 0).toDouble();
     _startDate = goal?.startDate;
     _dueDate = goal?.dueDate;
+
+    _duration = TextEditingController();
+    _durationUnit = DurationUnit.month;
+    _durationUsable = true;
+    _durationFallbackReason = '';
+    final rule = goal?.durationRule;
+    if (rule != null) {
+      // 有规则时以规则为准，不再拿已有 dueDate 反推。
+      _duration.text = '${rule.amount}';
+      _durationUnit = rule.unit;
+    } else {
+      final start = _startDate;
+      final due = goal?.dueDate;
+      if (due != null) {
+        final inferred = start == null
+            ? null
+            : inferCalendarDuration(start, due);
+        if (inferred == null) {
+          _durationUsable = false;
+          _durationFallbackReason = start == null
+              ? '已有结束日期但未设置开始日期，期限无法起算，这里临时改回日期选择；补上开始日期后会自动恢复时长输入。'
+              : '当前结束日期不晚于开始日期，无法用正时长表示，这里临时改回日期选择；可在「设置 - 目标表单」切换为「截止日期」。';
+        } else {
+          _duration.text = '${inferred.amount}';
+          _durationUnit = inferred.unit;
+        }
+      }
+    }
   }
 
   @override
@@ -100,6 +232,7 @@ class _GoalEditorPageState extends State<GoalEditorPage> {
     _currentValue.dispose();
     _weight.dispose();
     _reason.dispose();
+    _duration.dispose();
     super.dispose();
   }
 
@@ -107,6 +240,9 @@ class _GoalEditorPageState extends State<GoalEditorPage> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final showHome = shouldShowHomeButton(context);
+    final dueMode = RepositoryScope.of(context).settings.dueFieldMode;
+    final useDuration = dueMode == DueFieldMode.duration && _durationUsable;
+    final dueLabel = useDuration ? '期限' : '截止日期';
     return Scaffold(
       appBar: AppBar(title: Text(_isEditing ? '编辑目标' : '新建目标')),
       floatingActionButton: showHome ? const HomeFloatingButton() : null,
@@ -330,54 +466,35 @@ class _GoalEditorPageState extends State<GoalEditorPage> {
           _Section(
             title: '时间与分类',
             children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: _DateField(
-                      label: _isEditing ? '开始日期' : '定时启动',
-                      value: _startDate,
-                      onPick: () async {
-                        final date = await pickDate(
-                          context,
-                          initial: _startDate,
-                          helpText: _isEditing ? '选择开始日期' : '选择定时启动日期',
-                        );
-                        if (date != null) setState(() => _startDate = date);
-                      },
-                      onClear:
-                          _isEditing &&
-                              widget.goal!.lifecycle == Lifecycle.active
-                          ? null
-                          : () => setState(() => _startDate = null),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: _DateField(
-                      label: '截止日期',
-                      value: _dueDate,
-                      onPick: () async {
-                        final date = await pickDate(
-                          context,
-                          initial: _dueDate,
-                          helpText: '选择截止日期',
-                        );
-                        if (date != null) setState(() => _dueDate = date);
-                      },
-                      onClear: () => setState(() => _dueDate = null),
-                    ),
-                  ),
-                ],
-              ),
+              _dateFields(useDuration, dueLabel),
               const SizedBox(height: 8),
               Text(
                 _isEditing
                     ? (widget.goal!.lifecycle == Lifecycle.active
-                          ? '进行中的目标必须保留开始日期；截止日期可选。'
+                          ? '进行中的目标必须保留开始日期；$dueLabel可选。'
                           : '日期可选。没有起止日期时，不计算时间线和配速。')
                     : '设为今天或更早：创建后立即启动；设为未来日期：到达当天自动启动；不设置则先保持未激活。',
                 style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
               ),
+              if (useDuration) ...[
+                const SizedBox(height: 6),
+                Text(
+                  _durationHint(),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+              ] else if (dueMode == DueFieldMode.duration) ...[
+                const SizedBox(height: 6),
+                Text(
+                  _durationFallbackReason,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
             ],
           ),
           if (_hasParent) ...[
@@ -450,15 +567,31 @@ class _GoalEditorPageState extends State<GoalEditorPage> {
   }
 
   void _save() {
+    final dueMode = RepositoryScope.read(context).settings.dueFieldMode;
+    final useDuration = dueMode == DueFieldMode.duration && _durationUsable;
+    final dueLabel = useDuration ? '期限' : '截止日期';
+    final rawDuration = _duration.text.trim();
+    if (useDuration && rawDuration.isNotEmpty && _durationAmount == null) {
+      showAppSnack(context, '请输入大于 0 的整数时长', error: true);
+      return;
+    }
+    // 时长规则随目标保存；只有开始日期存在时才有可写入的结束日期。
+    final amount = useDuration ? _durationAmount : null;
+    final DateTime? dueDate = useDuration
+        ? (_startDate == null || amount == null
+              ? null
+              : addCalendarDuration(_startDate!, amount, _durationUnit))
+        : _dueDate;
+
     final title = _title.text.trim();
     if (title.isEmpty) {
       showAppSnack(context, '请填写目标标题', error: true);
       return;
     }
     if (_startDate != null &&
-        _dueDate != null &&
-        _dueDate!.isBefore(_startDate!)) {
-      showAppSnack(context, '截止日期不能早于开始日期', error: true);
+        dueDate != null &&
+        dueDate.isBefore(_startDate!)) {
+      showAppSnack(context, '$dueLabel不能早于开始日期', error: true);
       return;
     }
 
@@ -501,7 +634,9 @@ class _GoalEditorPageState extends State<GoalEditorPage> {
           existing?.lifecycle ??
           (_startsImmediately ? Lifecycle.active : Lifecycle.pending),
       startDate: _startDate,
-      dueDate: _dueDate,
+      dueDate: dueDate,
+      durationAmount: amount,
+      durationUnit: amount == null ? null : _durationUnit,
       domain: _domain.text.trim(),
       tags: tags,
       parentGoalId: existing?.parentGoalId ?? widget.parent?.id,
@@ -660,6 +795,81 @@ class _ReadonlyValue extends StatelessWidget {
     return InputDecorator(
       decoration: InputDecoration(labelText: label),
       child: Text(value, style: const TextStyle(fontSize: 13)),
+    );
+  }
+}
+
+/// 「期限」= 时长输入：数字 + 日历单位，结束日期由外部按锚点推导。
+class _DurationField extends StatelessWidget {
+  const _DurationField({
+    required this.controller,
+    required this.unit,
+    required this.onChanged,
+    required this.onUnitChanged,
+    required this.onClear,
+  });
+
+  final TextEditingController controller;
+  final DurationUnit unit;
+  final ValueChanged<String> onChanged;
+  final ValueChanged<DurationUnit> onUnitChanged;
+  final VoidCallback onClear;
+
+  @override
+  Widget build(BuildContext context) {
+    return InputDecorator(
+      decoration: InputDecoration(
+        labelText: '期限',
+        suffixIcon: controller.text.isEmpty
+            ? null
+            : IconButton(
+                tooltip: '清除',
+                icon: const Icon(Icons.close, size: 17),
+                onPressed: onClear,
+              ),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: TextField(
+              key: const Key('duration-field'),
+              controller: controller,
+              keyboardType: TextInputType.number,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              decoration: const InputDecoration(
+                hintText: '如 3',
+                isCollapsed: true,
+                isDense: true,
+                border: InputBorder.none,
+                contentPadding: EdgeInsets.zero,
+              ),
+              style: const TextStyle(fontSize: 13),
+              onChanged: onChanged,
+            ),
+          ),
+          const SizedBox(width: 4),
+          DropdownButton<DurationUnit>(
+            key: const Key('duration-unit'),
+            value: unit,
+            isDense: true,
+            underline: const SizedBox.shrink(),
+            items: DurationUnit.values
+                .map(
+                  (item) => DropdownMenuItem<DurationUnit>(
+                    value: item,
+                    child: Text(
+                      item.label,
+                      style: const TextStyle(fontSize: 12.5),
+                    ),
+                  ),
+                )
+                .toList(),
+            onChanged: (value) {
+              if (value != null) onUnitChanged(value);
+            },
+          ),
+        ],
+      ),
     );
   }
 }

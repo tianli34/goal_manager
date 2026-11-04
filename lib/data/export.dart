@@ -140,6 +140,11 @@ void _writeGoal(StringBuffer buffer, Goal goal, AppData data, int depth) {
       '- 起止：${formatDate(goal.startDate)} → ${formatDate(goal.dueDate)}',
     )
     ..writeln('- 原始量：${_goalRawValue(goal)}');
+  if (goal.durationLabel != null) {
+    buffer.writeln(
+      '- 期限：${goal.durationLabel}（${goal.startDate == null ? '未设置开始日期，暂未计算结束日期' : '从 ${formatDate(goal.startDate)} 起算'}）',
+    );
+  }
   if (goal.successCriteria.isNotEmpty) {
     buffer.writeln('- 达成条件：${goal.successCriteria}');
   }

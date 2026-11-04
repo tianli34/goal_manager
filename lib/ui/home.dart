@@ -39,7 +39,10 @@ int stepsToHome(BuildContext context) {
   return depth + (tabIndex == 0 ? 0 : 1);
 }
 
-bool shouldShowHomeButton(BuildContext context) => stepsToHome(context) >= 2;
+/// 键盘弹出时不显示悬浮主页按钮：Scaffold 会把 FAB 顶到键盘上方，
+/// 挡住输入框和底部表单按钮。
+bool shouldShowHomeButton(BuildContext context) =>
+    MediaQuery.viewInsetsOf(context).bottom == 0 && stepsToHome(context) >= 2;
 
 void goHome(BuildContext context) {
   Navigator.of(context).popUntil((route) => route.isFirst);

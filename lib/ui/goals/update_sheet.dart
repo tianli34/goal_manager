@@ -287,9 +287,13 @@ class _CumulativeUpdateSheet extends StatefulWidget {
 }
 
 class _CumulativeUpdateSheetState extends State<_CumulativeUpdateSheet> {
-  final _amount = TextEditingController();
+  final _amount = TextEditingController.fromValue(
+    const TextEditingValue(
+      text: '1',
+      selection: TextSelection.collapsed(offset: 1),
+    ),
+  );
   final _note = TextEditingController();
-  bool _adding = true;
   String? _error;
 
   @override
@@ -297,6 +301,14 @@ class _CumulativeUpdateSheetState extends State<_CumulativeUpdateSheet> {
     _amount.dispose();
     _note.dispose();
     super.dispose();
+  }
+
+  void _step(double delta) {
+    final current = parseDouble(_amount.text) ?? 0;
+    setState(() {
+      _amount.text = formatNumber(current + delta);
+      _error = null;
+    });
   }
 
   @override
@@ -322,47 +334,65 @@ class _CumulativeUpdateSheetState extends State<_CumulativeUpdateSheet> {
               color: mechanismColor(Mechanism.cumulative),
             ),
             const SizedBox(height: 16),
-            SegmentedButton<bool>(
-              segments: const [
-                ButtonSegment(
-                  value: true,
-                  label: Text('增加'),
-                  icon: Icon(Icons.add, size: 16),
-                ),
-                ButtonSegment(
-                  value: false,
-                  label: Text('减少'),
-                  icon: Icon(Icons.remove, size: 16),
-                ),
-              ],
-              selected: {_adding},
-              onSelectionChanged: (value) =>
-                  setState(() => _adding = value.first),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _amount,
-              autofocus: true,
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
+            Center(
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton.filledTonal(
+                    onPressed: () => _step(-1),
+                    icon: const Icon(Icons.remove),
+                    tooltip: '数量 -1',
+                  ),
+                  const SizedBox(width: 8),
+                  SizedBox(
+                    width: 140,
+                    child: TextField(
+                      controller: _amount,
+                      autofocus: true,
+                      textAlign: TextAlign.center,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                        signed: true,
+                      ),
+                      inputFormatters: [
+                        FilteringTextInputFormatter.allow(RegExp(r'[0-9.,\-]')),
+                      ],
+                      onChanged: (_) => setState(() => _error = null),
+                      decoration: InputDecoration(
+                        labelText: '增量 ${goal.unit}',
+                        errorText: _error,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton.filledTonal(
+                    onPressed: () => _step(1),
+                    icon: const Icon(Icons.add),
+                    tooltip: '数量 +1',
+                  ),
+                ],
               ),
-              inputFormatters: [
-                FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
-              ],
-              decoration: InputDecoration(
-                labelText: '增量 ${goal.unit}',
-                hintText: '例如 100',
-                errorText: _error,
+            ),
+            const SizedBox(height: 6),
+            Center(
+              child: Text(
+                '正数增加，负数减少',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 10),
             Wrap(
               spacing: 6,
               children: [10, 50, 100, 500]
                   .map(
                     (value) => ActionChip(
                       label: Text('$value'),
-                      onPressed: () => _amount.text = '$value',
+                      onPressed: () => setState(() {
+                        _amount.text = '$value';
+                        _error = null;
+                      }),
                     ),
                   )
                   .toList(),
@@ -378,7 +408,7 @@ class _CumulativeUpdateSheetState extends State<_CumulativeUpdateSheet> {
               width: double.infinity,
               child: FilledButton(
                 onPressed: _submit,
-                child: Text(_adding ? '记录增加' : '记录减少'),
+                child: Text(_submitLabel),
               ),
             ),
           ],
@@ -387,15 +417,25 @@ class _CumulativeUpdateSheetState extends State<_CumulativeUpdateSheet> {
     );
   }
 
+  String get _submitLabel {
+    final amount = parseDouble(_amount.text);
+    if (amount == null || amount == 0) return '记录增量';
+    return amount > 0 ? '记录增加' : '记录减少';
+  }
+
   void _submit() {
     final amount = parseDouble(_amount.text);
-    if (amount == null || amount <= 0) {
-      setState(() => _error = '请输入大于 0 的增量');
+    if (amount == null) {
+      setState(() => _error = '请输入有效的增量');
+      return;
+    }
+    if (amount == 0) {
+      setState(() => _error = '增量不能为 0');
       return;
     }
     final message = widget.repo.recordCumulative(
       widget.goal.id,
-      _adding ? amount : -amount,
+      amount,
       note: _note.text.trim(),
     );
     if (message != null) {

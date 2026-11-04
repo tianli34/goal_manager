@@ -79,4 +79,24 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byTooltip('回到主页'), findsNothing);
   });
+
+  testWidgets('键盘弹出时隐藏主页按钮，收起后恢复', (tester) async {
+    await pumpApp(tester);
+
+    await tester.tap(find.text('目标'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('完成三个案例'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('属于 发布个人作品集'));
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('回到主页'), findsOneWidget);
+
+    tester.view.viewInsets = const FakeViewPadding(bottom: 320);
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('回到主页'), findsNothing);
+
+    tester.view.viewInsets = FakeViewPadding.zero;
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('回到主页'), findsOneWidget);
+  });
 }

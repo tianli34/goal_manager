@@ -118,6 +118,17 @@ class GoalCard extends StatelessWidget {
                     color: scheme.onSurfaceVariant,
                   ),
                 ),
+              ] else if (snapshot.ratio == null &&
+                  goal.dueDate == null &&
+                  goal.durationLabel != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  '期限 ${goal.durationLabel} · 待开始日期',
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
               ],
               if (canStart) ...[
                 const SizedBox(height: 10),

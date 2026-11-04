@@ -91,6 +91,24 @@ enum ExecutionMode {
   );
 }
 
+/// 新建 / 编辑目标时，「结束时间」用哪种方式填写。
+/// duration 是时间跨度（如三个月），deadline 是时间点（某个日期）。
+enum DueFieldMode {
+  duration('期限', '填一段时长；有开始日期时推算结束日期，没有则先保留规则'),
+  deadline('截止日期', '直接选择一个结束日期');
+
+  const DueFieldMode(this.label, this.description);
+
+  final String label;
+  final String description;
+
+  /// 旧备份没有该字段、或字段值非法时，一律回落到默认的「期限」。
+  static DueFieldMode parse(String? value) => values.firstWhere(
+    (e) => e.name == value,
+    orElse: () => DueFieldMode.duration,
+  );
+}
+
 enum CommitmentStatus {
   active('进行中'),
   fulfilled('已兑现'),

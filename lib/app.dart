@@ -17,7 +17,7 @@ class GoalManagerApp extends StatelessWidget {
     return RepositoryScope(
       repository: repository,
       child: MaterialApp(
-        title: '目标管理',
+        title: '北极星',
         debugShowCheckedModeBanner: false,
         theme: buildAppTheme(Brightness.light),
         darkTheme: buildAppTheme(Brightness.dark),

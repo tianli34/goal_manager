@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../core/date_utils.dart';
+import '../../core/enums.dart';
 import '../../data/storage.dart';
 import '../scope.dart';
 import '../widgets/common.dart';
@@ -48,6 +49,12 @@ class _SettingsPageState extends State<SettingsPage> {
         metricMinObservations: _metricMinObservations,
       ),
     );
+  }
+
+  void _setDueFieldMode(DueFieldMode mode) {
+    final repo = RepositoryScope.read(context);
+    if (repo.settings.dueFieldMode == mode) return;
+    repo.updateSettings(repo.settings.copyWith(dueFieldMode: mode));
   }
 
   @override
@@ -177,6 +184,27 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
           ),
         ),
+        const SectionHeader(
+          title: '目标表单',
+          subtitle: '新建与编辑目标时，结束时间用哪种方式填写；期限只从开始日期起算',
+        ),
+        Card(
+          child: Column(
+            children: [
+              _DueModeTile(
+                mode: DueFieldMode.duration,
+                selected: repo.settings.dueFieldMode == DueFieldMode.duration,
+                onTap: () => _setDueFieldMode(DueFieldMode.duration),
+              ),
+              const Divider(height: 1, indent: 16, endIndent: 16),
+              _DueModeTile(
+                mode: DueFieldMode.deadline,
+                selected: repo.settings.dueFieldMode == DueFieldMode.deadline,
+                onTap: () => _setDueFieldMode(DueFieldMode.deadline),
+              ),
+            ],
+          ),
+        ),
         const SectionHeader(title: '数据管理'),
         Card(
           child: Column(
@@ -205,7 +233,7 @@ class _SettingsPageState extends State<SettingsPage> {
           child: Padding(
             padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
             child: Text(
-              '目标管理 · 首版 MVP\n\n'
+              '北极星 · 首版 MVP\n\n'
               '五种机制：完成型、累积型、指标型、主观型、里程碑型。\n'
               '进度是派生值，完成判定与生命周期分别记录；原始读数始终保留。\n'
               '承诺不改变目标状态，复盘只产出决定。',
@@ -338,6 +366,33 @@ class _SettingsPageState extends State<SettingsPage> {
     RepositoryScope.read(context).clearAll();
     _syncThresholds();
     if (mounted) showAppSnack(context, '数据已清空');
+  }
+}
+
+class _DueModeTile extends StatelessWidget {
+  const _DueModeTile({
+    required this.mode,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final DueFieldMode mode;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return ListTile(
+      leading: Icon(
+        selected ? Icons.radio_button_checked : Icons.radio_button_unchecked,
+        size: 20,
+        color: selected ? scheme.primary : scheme.onSurfaceVariant,
+      ),
+      title: Text(mode.label, style: const TextStyle(fontSize: 14)),
+      subtitle: Text(mode.description, style: const TextStyle(fontSize: 12)),
+      onTap: onTap,
+    );
   }
 }
 

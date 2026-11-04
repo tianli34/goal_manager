@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:goal_manager/core/date_utils.dart';
 import 'package:goal_manager/core/enums.dart';
+import 'package:goal_manager/data/export.dart';
 import 'package:goal_manager/data/repository.dart';
 import 'package:goal_manager/data/storage.dart';
 import 'package:goal_manager/logic/commitment_logic.dart';
@@ -511,6 +512,226 @@ void main() {
       );
       final signals = computeSignals(AppData(goals: [goal]), now);
       expect(signals.single.type, AttentionSignal.insufficientData);
+    });
+  });
+
+  group('期限输入', () {
+    test('日历时长按自然月推进并夹紧月末', () {
+      expect(
+        addCalendarDuration(DateTime(2026, 1, 31), 1, DurationUnit.month),
+        DateTime(2026, 2, 28),
+      );
+      expect(
+        addCalendarDuration(DateTime(2024, 1, 31), 1, DurationUnit.month),
+        DateTime(2024, 2, 29),
+      );
+      expect(
+        addCalendarDuration(DateTime(2026, 11, 4), 2, DurationUnit.week),
+        DateTime(2026, 11, 18),
+      );
+      expect(
+        addCalendarDuration(DateTime(2026, 11, 4), 1, DurationUnit.year),
+        DateTime(2027, 11, 4),
+      );
+      expect(
+        addCalendarDuration(DateTime(2026, 12, 31), 3, DurationUnit.day),
+        DateTime(2027, 1, 3),
+      );
+    });
+
+    test('已有结束日期可反推为等价时长', () {
+      final start = DateTime(2026, 11, 4);
+      const cases = <({int amount, DurationUnit unit})>[
+        (amount: 3, unit: DurationUnit.month),
+        (amount: 90, unit: DurationUnit.day),
+        (amount: 2, unit: DurationUnit.week),
+        (amount: 1, unit: DurationUnit.year),
+      ];
+      for (final item in cases) {
+        final due = addCalendarDuration(start, item.amount, item.unit);
+        final inferred = inferCalendarDuration(start, due);
+        expect(inferred, isNotNull, reason: '${item.unit.label} 应可反推');
+        expect(
+          addCalendarDuration(start, inferred!.amount, inferred.unit),
+          due,
+          reason: '反推后结束日期必须不变',
+        );
+      }
+      expect(inferCalendarDuration(start, start), isNull);
+      expect(
+        inferCalendarDuration(start, start.subtract(const Duration(days: 1))),
+        isNull,
+      );
+    });
+
+    test('默认显示期限，偏好可持久化且兼容旧备份', () {
+      expect(AppSettings().dueFieldMode, DueFieldMode.duration);
+      expect(
+        AppSettings.fromJson(<String, dynamic>{}).dueFieldMode,
+        DueFieldMode.duration,
+      );
+      expect(
+        AppSettings.fromJson(<String, dynamic>{'dueFieldMode': 'bogus'})
+            .dueFieldMode,
+        DueFieldMode.duration,
+      );
+      final deadline = AppSettings(dueFieldMode: DueFieldMode.deadline);
+      expect(
+        AppSettings.fromJson(deadline.toJson()).dueFieldMode,
+        DueFieldMode.deadline,
+      );
+      expect(
+        deadline.copyWith(dueFieldMode: DueFieldMode.duration).dueFieldMode,
+        DueFieldMode.duration,
+      );
+    });
+
+    test('配置变更记录跟随用户选择的叫法', () async {
+      final repo = await emptyRepo();
+      repo.addGoal(
+        goalOf('g', Mechanism.completion, due: DateTime(2027, 1, 1)),
+      );
+
+      repo.updateGoal(
+        repo.goalById('g')!.copyWith(dueDate: DateTime(2027, 2, 1)),
+      );
+      expect(repo.recordsFor('g').any((r) => r.note.contains('期限')), isTrue);
+
+      repo.updateSettings(
+        repo.settings.copyWith(dueFieldMode: DueFieldMode.deadline),
+      );
+      repo.updateGoal(
+        repo.goalById('g')!.copyWith(dueDate: DateTime(2027, 3, 1)),
+      );
+      expect(repo.recordsFor('g').any((r) => r.note.contains('截止日期')), isTrue);
+    });
+
+    test('时长规则可持久化，且兼容没有该字段的旧备份', () {
+      final goal = Goal(
+        id: 'g',
+        title: 'g',
+        durationAmount: 3,
+        durationUnit: DurationUnit.month,
+      );
+      expect(goal.durationLabel, '3 个月');
+      expect(Goal.fromJson(goal.toJson()).durationLabel, '3 个月');
+      expect(
+        goal.copyWith(durationAmount: null, durationUnit: null).durationRule,
+        isNull,
+      );
+
+      expect(Goal.fromJson(<String, dynamic>{'id': 'g'}).durationRule, isNull);
+      final invalid = Goal.fromJson(<String, dynamic>{
+        'id': 'g',
+        'durationAmount': 3,
+        'durationUnit': 'bogus',
+      });
+      expect(invalid.durationUnit, DurationUnit.month);
+      expect(
+        Goal.fromJson(<String, dynamic>{'id': 'g', 'durationAmount': 0})
+            .durationRule,
+        isNull,
+      );
+    });
+
+    test('没有开始日期时只保留期限规则，不产生结束日期', () async {
+      final repo = await emptyRepo();
+      repo.addGoal(
+        Goal(
+          id: 'g',
+          title: 'g',
+          lifecycle: Lifecycle.pending,
+          durationAmount: 3,
+          durationUnit: DurationUnit.month,
+        ),
+      );
+
+      final goal = repo.goalById('g')!;
+      expect(goal.startDate, isNull);
+      expect(goal.dueDate, isNull);
+      expect(goal.durationLabel, '3 个月');
+    });
+
+    test('后来设置开始日期时，按规则推算结束日期', () async {
+      final repo = await emptyRepo();
+      repo.addGoal(
+        Goal(
+          id: 'g',
+          title: 'g',
+          lifecycle: Lifecycle.pending,
+          durationAmount: 3,
+          durationUnit: DurationUnit.month,
+        ),
+      );
+
+      final start = DateTime(2026, 11, 4);
+      repo.updateGoal(repo.goalById('g')!.copyWith(startDate: start));
+      final goal = repo.goalById('g')!;
+      expect(goal.dueDate, addCalendarDuration(start, 3, DurationUnit.month));
+      expect(goal.durationLabel, '3 个月');
+    });
+
+    test('首次激活补上开始日期时，同样按规则推算结束日期', () async {
+      final repo = await emptyRepo();
+      repo.addGoal(
+        Goal(
+          id: 'g',
+          title: 'g',
+          lifecycle: Lifecycle.pending,
+          durationAmount: 3,
+          durationUnit: DurationUnit.month,
+        ),
+      );
+      expect(repo.goalById('g')!.dueDate, isNull);
+
+      expect(repo.changeLifecycle('g', Lifecycle.active), isNull);
+      final goal = repo.goalById('g')!;
+      expect(goal.startDate, dateOnly(DateTime.now()));
+      expect(
+        goal.dueDate,
+        addCalendarDuration(goal.startDate!, 3, DurationUnit.month),
+      );
+    });
+
+    test('导入恢复时按规则重建结束日期', () async {
+      final repo = await emptyRepo();
+      final start = DateTime(2026, 11, 4);
+      repo.addGoal(
+        Goal(
+          id: 'g',
+          title: 'g',
+          lifecycle: Lifecycle.pending,
+          startDate: start,
+          durationAmount: 3,
+          durationUnit: DurationUnit.month,
+        ),
+      );
+      final exported = repo.exportJson();
+
+      final restored = await emptyRepo();
+      restored.importJson(exported);
+      expect(
+        restored.goalById('g')!.dueDate,
+        addCalendarDuration(start, 3, DurationUnit.month),
+      );
+      expect(restored.goalById('g')!.durationLabel, '3 个月');
+    });
+
+    test('Markdown 导出说明待生效的期限规则', () {
+      final markdown = buildMarkdownExport(
+        AppData(
+          goals: [
+            Goal(
+              id: 'g',
+              title: 'g',
+              durationAmount: 3,
+              durationUnit: DurationUnit.month,
+            ),
+          ],
+        ),
+        DateTime(2026, 11, 4),
+      );
+      expect(markdown, contains('- 期限：3 个月（未设置开始日期，暂未计算结束日期）'));
     });
   });
 }

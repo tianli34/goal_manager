@@ -1,3 +1,4 @@
+import '../core/date_utils.dart';
 import '../core/enums.dart';
 import 'json_helpers.dart';
 
@@ -13,6 +14,8 @@ class Goal {
     this.lifecycle = Lifecycle.active,
     this.startDate,
     this.dueDate,
+    this.durationAmount,
+    this.durationUnit,
     this.domain = '',
     this.tags = const [],
     this.parentGoalId,
@@ -40,6 +43,12 @@ class Goal {
   final Lifecycle lifecycle;
   final DateTime? startDate;
   final DateTime? dueDate;
+
+  /// 「期限」录入方式下保存的时长规则：结束日期只从开始日期推导，
+  /// 没有开始日期时规则先挂着、不产生结束日期。两者为空表示用「截止日期」录入。
+  final int? durationAmount;
+  final DurationUnit? durationUnit;
+
   final String domain;
   final List<String> tags;
   final String? parentGoalId;
@@ -65,6 +74,19 @@ class Goal {
   /// 只有完成型、主观型可以完全靠一次操作完成，其余机制由原始量推导。
   bool get isAtomic => mechanism != Mechanism.milestone;
 
+  /// 非法（非正数、单位缺失）的规则一律视为没有规则。
+  ({int amount, DurationUnit unit})? get durationRule {
+    final amount = durationAmount;
+    final unit = durationUnit;
+    if (amount == null || amount <= 0 || unit == null) return null;
+    return (amount: amount, unit: unit);
+  }
+
+  String? get durationLabel {
+    final rule = durationRule;
+    return rule == null ? null : '${rule.amount} ${rule.unit.label}';
+  }
+
   Goal copyWith({
     String? id,
     String? title,
@@ -74,6 +96,8 @@ class Goal {
     Lifecycle? lifecycle,
     Object? startDate = _unset,
     Object? dueDate = _unset,
+    Object? durationAmount = _unset,
+    Object? durationUnit = _unset,
     String? domain,
     List<String>? tags,
     Object? parentGoalId = _unset,
@@ -102,6 +126,12 @@ class Goal {
           ? this.startDate
           : startDate as DateTime?,
       dueDate: identical(dueDate, _unset) ? this.dueDate : dueDate as DateTime?,
+      durationAmount: identical(durationAmount, _unset)
+          ? this.durationAmount
+          : durationAmount as int?,
+      durationUnit: identical(durationUnit, _unset)
+          ? this.durationUnit
+          : durationUnit as DurationUnit?,
       domain: domain ?? this.domain,
       tags: tags ?? this.tags,
       parentGoalId: identical(parentGoalId, _unset)
@@ -134,6 +164,8 @@ class Goal {
     'lifecycle': lifecycle.name,
     'startDate': startDate?.toIso8601String(),
     'dueDate': dueDate?.toIso8601String(),
+    'durationAmount': durationAmount,
+    'durationUnit': durationUnit?.name,
     'domain': domain,
     'tags': tags,
     'parentGoalId': parentGoalId,
@@ -153,6 +185,10 @@ class Goal {
   };
 
   factory Goal.fromJson(Map<String, dynamic> json) {
+    final amount =
+        json['durationAmount'] is num && (json['durationAmount'] as num) > 0
+        ? (json['durationAmount'] as num).toInt()
+        : null;
     return Goal(
       id: asString(json['id']),
       title: asString(json['title']),
@@ -162,6 +198,10 @@ class Goal {
       lifecycle: Lifecycle.parse(asString(json['lifecycle'])),
       startDate: asDate(json['startDate']),
       dueDate: asDate(json['dueDate']),
+      durationAmount: amount,
+      durationUnit: amount == null
+          ? null
+          : DurationUnit.parse(asString(json['durationUnit'])),
       domain: asString(json['domain']),
       tags: asStringList(json['tags']),
       parentGoalId:
